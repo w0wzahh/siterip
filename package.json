@@ -1,0 +1,18 @@
+{
+  "name": "siterip",
+  "version": "2.0.0",
+  "description": "Download entire websites (incl. React/Vue/Angular) as ZIP archives",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "cheerio": "^1.0.0",
+    "express": "^4.18.2",
+    "mime-types": "^2.1.35",
+    "p-limit": "^6.1.0",
+    "puppeteer": "^24.0.0",
+    "uuid": "^9.0.0"
+  }
+}
