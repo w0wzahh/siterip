@@ -56,7 +56,7 @@ app.get('/api/progress/:jobId', (req, res) => {
   sseClients.set(jobId, res);
   const job = jobs.get(jobId);
   if (job?.status === 'done')
-    sendSSE(jobId, { type: 'done', jobId, files: job.files ?? 0, size: job.sizeMB ?? '0.00' });
+    sendSSE(jobId, { type: 'done', jobId, files: job.files ?? 0, size: job.sizeMB ?? '0.00', tree: job.tree ?? null });
   else if (job?.status === 'error')
     sendSSE(jobId, { type: 'error', msg: job.errorMsg ?? 'Unknown error' });
   req.on('close', () => sseClients.delete(jobId));
@@ -87,6 +87,70 @@ app.get('/api/get/:jobId', (req, res) => {
     if (!err) setTimeout(() => cleanup(req.params.jobId), 10_000);
   });
 });
+
+/** Return file tree for a finished job */
+app.get('/api/tree/:jobId', (req, res) => {
+  const job = jobs.get(req.params.jobId);
+  if (!job || job.status !== 'done' || !job.tree)
+    return res.status(404).json({ error: 'Job not found or not ready.' });
+  res.json(job.tree);
+});
+
+/** Download a single file from a finished job */
+app.get('/api/file/:jobId/*', (req, res) => {
+  const job = jobs.get(req.params.jobId);
+  if (!job || job.status !== 'done' || !job.siteDir)
+    return res.status(404).json({ error: 'Job not found or not ready.' });
+  const rel  = req.params[0] ?? '';
+  const safe = path.normalize(path.join(job.siteDir, rel));
+  if (!safe.startsWith(job.siteDir)) return res.status(403).end();
+  if (!fs.existsSync(safe) || !fs.statSync(safe).isFile())
+    return res.status(404).json({ error: 'File not found.' });
+  res.download(safe, path.basename(safe));
+});
+
+/** Download a sub-folder as ZIP */
+app.get('/api/folder/:jobId/*', async (req, res) => {
+  const job = jobs.get(req.params.jobId);
+  if (!job || job.status !== 'done' || !job.siteDir)
+    return res.status(404).json({ error: 'Job not found or not ready.' });
+  const rel  = req.params[0] ?? '';
+  const safe = rel ? path.normalize(path.join(job.siteDir, rel)) : job.siteDir;
+  if (!safe.startsWith(job.siteDir)) return res.status(403).end();
+  if (!fs.existsSync(safe) || !fs.statSync(safe).isDirectory())
+    return res.status(404).json({ error: 'Folder not found.' });
+  const folderName = path.basename(safe) || 'site';
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${folderName}.zip"`);
+  const arc = archiver('zip', { zlib: { level: 6 } });
+  arc.on('error', () => res.end());
+  arc.pipe(res);
+  arc.directory(safe, false);
+  arc.finalize();
+});
+
+/** Build a JSON file-tree from a directory */
+function buildTree(rootDir, dir) {
+  const name    = path.basename(dir) || 'site';
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  const children = [];
+  for (const e of entries.sort((a, b) => {
+    // folders first, then alphabetical
+    if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  })) {
+    const full = path.join(dir, e.name);
+    const rel  = path.relative(rootDir, full).replace(/\\/g, '/');
+    if (e.isDirectory()) {
+      children.push({ type: 'dir', name: e.name, path: rel, children: buildTree(rootDir, full).children });
+    } else {
+      const size = fs.statSync(full).size;
+      const ext  = path.extname(e.name).toLowerCase().slice(1);
+      children.push({ type: 'file', name: e.name, path: rel, size, ext });
+    }
+  }
+  return { type: 'dir', name, path: path.relative(rootDir, dir).replace(/\\/g, '/') || '.', children };
+}
 
 function cleanup(jobId) {
   const job = jobs.get(jobId);
@@ -151,8 +215,9 @@ async function runDownload(jobId, url, tmpDir, depth) {
       arc.finalize();
     });
     const sizeMB = (fs.statSync(zipPath).size / 1_048_576).toFixed(2);
-    Object.assign(jobs.get(jobId), { status: 'done', zipPath, files: fileCount, sizeMB });
-    sendSSE(jobId, { type: 'done', jobId, files: fileCount, size: sizeMB });
+    const tree = buildTree(siteDir, siteDir);
+    Object.assign(jobs.get(jobId), { status: 'done', zipPath, files: fileCount, sizeMB, siteDir, tree });
+    sendSSE(jobId, { type: 'done', jobId, files: fileCount, size: sizeMB, tree });
   } catch (err) {
     const msg = err?.message ?? String(err);
     Object.assign(jobs.get(jobId), { status: 'error', errorMsg: msg });
@@ -174,7 +239,7 @@ class SiteCrawler {
     this.assets   = new Map();
     this.visited  = new Set();
     this.fileCount = 0;
-    this.limit = pLimit(2);
+    this.limit = pLimit(4);
   }
 
   async crawl() {
