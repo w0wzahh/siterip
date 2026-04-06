@@ -20,7 +20,7 @@ RUN npx puppeteer browsers install chrome
 
 COPY . .
 
-ENV PORT=3000
-EXPOSE 3000
+ENV PORT=7860
+EXPOSE 7860
 
 CMD ["node", "server.js"]
