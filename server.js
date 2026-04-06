@@ -76,14 +76,18 @@ app.get('/api/progress/:jobId', (req, res) => {
   const { jobId } = req.params;
   sseClients.set(jobId, res);
   const heartbeat = setInterval(() => {
-    try { res.write(':heartbeat\n\n'); } catch { clearInterval(heartbeat); }
-  }, 15000);
+    try { res.write(':ping\n\n'); } catch { clearInterval(heartbeat); }
+  }, 8000);
   const job = jobs.get(jobId);
   if (job?.status === 'done')
     sendSSE(jobId, { type: 'done', jobId, files: job.files ?? 0, size: job.sizeMB ?? '0.00', tree: job.tree ?? null });
   else if (job?.status === 'error')
     sendSSE(jobId, { type: 'error', msg: job.errorMsg ?? 'Unknown error' });
-  req.on('close', () => { clearInterval(heartbeat); sseClients.delete(jobId); });
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    // Only delete if this response is still the active client (prevents race with reconnect)
+    if (sseClients.get(jobId) === res) sseClients.delete(jobId);
+  });
 });
 
 app.post('/api/download', async (req, res) => {
