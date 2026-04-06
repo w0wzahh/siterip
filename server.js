@@ -228,6 +228,9 @@ async function runDownload(jobId, url, tmpDir, depth) {
         '--disable-dev-shm-usage',
         '--no-first-run', '--no-default-browser-check',
         '--disable-blink-features=AutomationControlled',
+        '--disable-gpu', '--disable-software-rasterizer',
+        '--single-process',
+        '--js-flags=--max-old-space-size=256',
         '--window-size=1920,1080',
       ],
     });
@@ -270,10 +273,55 @@ class SiteCrawler {
     this.outDir   = outDir;
     this.maxDepth = maxDepth;
     this.notify   = notify;
-    this.assets   = new Map();
+    this.assets   = new Map();   // url -> { stagePath, contentType, isPage, size }  (NO buffer)
     this.visited  = new Set();
     this.fileCount = 0;
-    this.limit = pLimit(4);
+    this.limit = pLimit(2);      // reduced from 4 to 2 to lower peak memory
+    this._stageDir = path.join(outDir, '..', '_stage');
+    fs.mkdirSync(this._stageDir, { recursive: true });
+    this._stageIdx = 0;
+    this._totalBytes = 0;
+    this._maxTotalBytes = 350 * 1024 * 1024;  // 350 MB disk cap
+    this._maxAssets = 5000;
+    this._memWarnSent = false;
+  }
+
+  /** Write a buffer to the staging dir and return metadata (no buffer retained). */
+  _stage(url, buf, contentType, isPage = false) {
+    if (this.assets.has(url)) return;
+    if (this.assets.size >= this._maxAssets) {
+      if (!this._memWarnSent) {
+        this.notify({ type: 'warn', msg: `Asset limit reached (${this._maxAssets}). Skipping further assets.` });
+        this._memWarnSent = true;
+      }
+      return;
+    }
+    if (this._totalBytes + buf.length > this._maxTotalBytes) {
+      if (!this._memWarnSent) {
+        this.notify({ type: 'warn', msg: `Total size limit reached (~350 MB). Skipping further assets.` });
+        this._memWarnSent = true;
+      }
+      return;
+    }
+    const stagePath = path.join(this._stageDir, String(this._stageIdx++));
+    fs.writeFileSync(stagePath, buf);
+    this._totalBytes += buf.length;
+    this.assets.set(url, { stagePath, contentType, isPage, size: buf.length });
+  }
+
+  /** Read a previously staged buffer back from disk. */
+  _readStaged(meta) {
+    return fs.readFileSync(meta.stagePath);
+  }
+
+  _checkMemory() {
+    const rss = process.memoryUsage.rss();
+    if (rss > 420 * 1024 * 1024 && !this._memWarnSent) {
+      this._memWarnSent = true;
+      this.notify({ type: 'warn', msg: `Memory pressure detected (${(rss / 1048576).toFixed(0)} MB RSS). Limiting scope.` });
+      return true;
+    }
+    return false;
   }
 
   async crawl() {
@@ -293,12 +341,18 @@ class SiteCrawler {
         for (const link of links)
           if (!this.visited.has(link) && !nextWave.includes(link)) nextWave.push(link);
       wave = nextWave;
+      if (this._checkMemory()) {
+        this.notify({ type: 'warn', msg: 'Stopping crawl early due to memory pressure.' });
+        break;
+      }
     }
     this.notify({ type: 'log', msg: `Crawl complete. ${this.assets.size} assets captured.` });
-    this.notify({ type: 'log', msg: 'Discovering common server paths...' });
-    await this._discoverCommonPaths();
-    this.notify({ type: 'log', msg: 'Checking for source maps...' });
-    await this._fetchSourceMaps();
+    if (!this._memWarnSent) {
+      this.notify({ type: 'log', msg: 'Discovering common server paths...' });
+      await this._discoverCommonPaths();
+      this.notify({ type: 'log', msg: 'Checking for source maps...' });
+      await this._fetchSourceMaps();
+    }
     this.notify({ type: 'log', msg: `Total assets: ${this.assets.size}. Rewriting and saving...` });
     await this._saveAll();
   }
@@ -324,7 +378,7 @@ class SiteCrawler {
           const ct = (response.headers()['content-type'] ?? '').split(';')[0].trim().toLowerCase();
           if (!ct || ct === 'text/event-stream') return;
           const buf = await response.buffer();
-          captured.set(rurl, { buffer: buf, contentType: ct });
+          captured.set(rurl, { buf, ct });
         } catch { /* stream/disposed */ }
       });
       this.notify({ type: 'log', msg: `  -> Rendering: ${url}` });
@@ -332,9 +386,14 @@ class SiteCrawler {
       await this._autoScroll(page);
       await new Promise(r => setTimeout(r, 1_500));
       const html = await page.content();
-      this.assets.set(url, { buffer: Buffer.from(html, 'utf8'), contentType: 'text/html', isPage: true });
-      for (const [u, a] of captured)
-        if (!this.assets.has(u)) this.assets.set(u, a);
+
+      // Stage the page HTML and all captured responses to disk immediately
+      this._stage(url, Buffer.from(html, 'utf8'), 'text/html', true);
+      for (const [u, { buf, ct }] of captured) {
+        this._stage(u, buf, ct);
+      }
+      captured.clear();  // free all buffers from this page
+
       this.notify({ type: 'file', count: this.assets.size, name: new URL(url).pathname || '/' });
       if (depth < this.maxDepth) {
         const hrefs = await page.evaluate(origin =>
@@ -439,7 +498,7 @@ class SiteCrawler {
             if (ct && ct !== 'text/html') {
               const buf = await resp.buffer();
               if (buf.length > 0 && buf.length < 5_000_000) {
-                this.assets.set(fullUrl, { buffer: buf, contentType: ct });
+                this._stage(fullUrl, buf, ct);
                 this.notify({ type: 'log', msg: `  + Found: ${p}` });
               }
             }
@@ -453,12 +512,13 @@ class SiteCrawler {
 
   async _fetchSourceMaps() {
     const maps = [];
-    for (const [url, asset] of this.assets) {
-      const ct = asset.contentType;
+    for (const [url, meta] of this.assets) {
+      const ct = meta.contentType;
       if (ct !== 'text/css' && !ct.includes('javascript')) continue;
       try {
-        const content = asset.buffer.toString('utf8').slice(-500);
-        const match = content.match(/\/[/*]#\s*sourceMappingURL=(\S+)/);
+        const buf = this._readStaged(meta);
+        const tail = buf.toString('utf8', Math.max(0, buf.length - 500));
+        const match = tail.match(/\/[/*]#\s*sourceMappingURL=(\S+)/);
         if (!match || match[1].startsWith('data:')) continue;
         const mapUrl = new URL(match[1], url).href;
         if (!this.assets.has(mapUrl)) maps.push(mapUrl);
@@ -473,7 +533,7 @@ class SiteCrawler {
           if (resp && resp.status() >= 200 && resp.status() < 400) {
             const buf = await resp.buffer();
             if (buf.length > 0 && buf.length < 10_000_000) {
-              this.assets.set(mapUrl, { buffer: buf, contentType: 'application/json' });
+              this._stage(mapUrl, buf, 'application/json');
               this.notify({ type: 'log', msg: `  + Source map: ${new URL(mapUrl).pathname}` });
             }
           }
@@ -486,17 +546,17 @@ class SiteCrawler {
 
   async _saveAll() {
     const u2p = new Map();
-    for (const [url, asset] of this.assets)
-      u2p.set(url, this._urlToLocalPath(url, asset.contentType, asset.isPage ?? false));
+    for (const [url, meta] of this.assets)
+      u2p.set(url, this._urlToLocalPath(url, meta.contentType, meta.isPage ?? false));
 
-    for (const [url, asset] of this.assets) {
+    for (const [url, meta] of this.assets) {
       const localPath = u2p.get(url);
       if (!localPath) continue;
       const full = path.join(this.outDir, localPath);
       try {
         fs.mkdirSync(path.dirname(full), { recursive: true });
-        let buf = asset.buffer;
-        const ct = asset.contentType;
+        let buf = this._readStaged(meta);
+        const ct = meta.contentType;
         if (ct === 'text/html')
           buf = Buffer.from(this._rewriteHtml(buf.toString('utf8'), url, u2p, localPath), 'utf8');
         else if (ct === 'text/css')
@@ -506,10 +566,13 @@ class SiteCrawler {
           this.fileCount++;
           this.notify({ type: 'file', count: this.fileCount, name: localPath });
         }
+        buf = null;  // help GC
       } catch (err) {
         this.notify({ type: 'warn', msg: `  Could not write ${localPath}: ${err.message}` });
       }
     }
+    // Clean up staging directory
+    fs.rmSync(this._stageDir, { recursive: true, force: true });
     this._writeServerScript();
     this._writeReadme();
   }
