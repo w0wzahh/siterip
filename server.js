@@ -8,7 +8,6 @@ import puppeteer from 'puppeteer';
 import { v4 as uuidv4 } from 'uuid';
 import dns from 'dns/promises';
 import { URL } from 'url';
-import pLimit from 'p-limit';
 import * as cheerio from 'cheerio';
 import mimeTypes from 'mime-types';
 
@@ -212,30 +211,10 @@ async function runDownload(jobId, url, tmpDir, depth) {
   activeJobs++;
   const siteDir = path.join(tmpDir, 'site');
   fs.mkdirSync(siteDir, { recursive: true });
-  let browser;
   try {
     sendSSE(jobId, { type: 'log', msg: `Target: ${url}` });
     sendSSE(jobId, { type: 'log', msg: `Crawl depth: ${depth}` });
-    sendSSE(jobId, { type: 'log', msg: 'Launching headless Chromium...' });
-    browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        '--no-sandbox', '--disable-setuid-sandbox',
-        '--disable-web-security',
-        '--disable-features=IsolateOrigins,site-per-process',
-        '--disable-site-isolation-trials',
-        '--ignore-certificate-errors',
-        '--disable-dev-shm-usage',
-        '--no-first-run', '--no-default-browser-check',
-        '--disable-blink-features=AutomationControlled',
-        '--disable-gpu', '--disable-software-rasterizer',
-        '--single-process',
-        '--js-flags=--max-old-space-size=256',
-        '--window-size=1920,1080',
-      ],
-    });
-    sendSSE(jobId, { type: 'log', msg: 'Browser ready. Starting crawl...' });
-    const crawler = new SiteCrawler(browser, url, siteDir, depth, msg => sendSSE(jobId, msg));
+    const crawler = new SiteCrawler(url, siteDir, depth, msg => sendSSE(jobId, msg));
     await crawler.crawl();
     const fileCount = crawler.fileCount;
     sendSSE(jobId, { type: 'log', msg: `All done - ${fileCount} files on disk. Packaging...` });
@@ -261,45 +240,64 @@ async function runDownload(jobId, url, tmpDir, depth) {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   } finally {
     activeJobs--;
-    if (browser) await browser.close().catch(() => {});
   }
 }
 
+const BROWSER_ARGS = [
+  '--no-sandbox', '--disable-setuid-sandbox',
+  '--disable-web-security',
+  '--disable-features=IsolateOrigins,site-per-process',
+  '--disable-site-isolation-trials',
+  '--ignore-certificate-errors',
+  '--disable-dev-shm-usage',
+  '--no-first-run', '--no-default-browser-check',
+  '--disable-blink-features=AutomationControlled',
+  '--disable-gpu', '--disable-software-rasterizer',
+  '--disable-extensions',
+  '--disable-background-networking',
+  '--disable-default-apps',
+  '--disable-sync',
+  '--metrics-recording-only',
+  '--no-zygote',
+  '--js-flags=--max-old-space-size=192',
+  '--window-size=1920,1080',
+];
+
+const BLOCKED_RESOURCE_TYPES = new Set([
+  'media', 'websocket', 'manifest', 'other',
+]);
+const BLOCKED_EXTENSIONS = /\.(mp4|webm|avi|mov|wmv|flv|mkv|mp3|ogg|wav|flac|aac)(\?|$)/i;
+const MAX_RESPONSE_SIZE = 3 * 1024 * 1024;  // 3 MB per individual response
+
 class SiteCrawler {
-  constructor(browser, startUrl, outDir, maxDepth, notify) {
-    this.browser  = browser;
+  constructor(startUrl, outDir, maxDepth, notify) {
     this.startUrl = new URL(startUrl);
     this.origin   = this.startUrl.origin;
     this.outDir   = outDir;
     this.maxDepth = maxDepth;
     this.notify   = notify;
-    this.assets   = new Map();   // url -> { stagePath, contentType, isPage, size }  (NO buffer)
+    this.assets   = new Map();
     this.visited  = new Set();
     this.fileCount = 0;
-    this.limit = pLimit(2);      // reduced from 4 to 2 to lower peak memory
     this._stageDir = path.join(outDir, '..', '_stage');
     fs.mkdirSync(this._stageDir, { recursive: true });
     this._stageIdx = 0;
     this._totalBytes = 0;
-    this._maxTotalBytes = 350 * 1024 * 1024;  // 350 MB disk cap
-    this._maxAssets = 5000;
-    this._memWarnSent = false;
+    this._maxTotalBytes = 300 * 1024 * 1024;
+    this._maxAssets = 4000;
+    this._maxPages = 150;
+    this._pagesRendered = 0;
+    this._browser = null;
+    this._browserPageCount = 0;
+    this._limitHit = false;
   }
 
-  /** Write a buffer to the staging dir and return metadata (no buffer retained). */
   _stage(url, buf, contentType, isPage = false) {
     if (this.assets.has(url)) return;
-    if (this.assets.size >= this._maxAssets) {
-      if (!this._memWarnSent) {
-        this.notify({ type: 'warn', msg: `Asset limit reached (${this._maxAssets}). Skipping further assets.` });
-        this._memWarnSent = true;
-      }
-      return;
-    }
-    if (this._totalBytes + buf.length > this._maxTotalBytes) {
-      if (!this._memWarnSent) {
-        this.notify({ type: 'warn', msg: `Total size limit reached (~350 MB). Skipping further assets.` });
-        this._memWarnSent = true;
+    if (this.assets.size >= this._maxAssets || this._totalBytes + buf.length > this._maxTotalBytes) {
+      if (!this._limitHit) {
+        this.notify({ type: 'warn', msg: `Size/asset limit reached. Skipping further assets.` });
+        this._limitHit = true;
       }
       return;
     }
@@ -309,65 +307,117 @@ class SiteCrawler {
     this.assets.set(url, { stagePath, contentType, isPage, size: buf.length });
   }
 
-  /** Read a previously staged buffer back from disk. */
   _readStaged(meta) {
     return fs.readFileSync(meta.stagePath);
   }
 
-  _checkMemory() {
-    const rss = process.memoryUsage.rss();
-    if (rss > 420 * 1024 * 1024 && !this._memWarnSent) {
-      this._memWarnSent = true;
-      this.notify({ type: 'warn', msg: `Memory pressure detected (${(rss / 1048576).toFixed(0)} MB RSS). Limiting scope.` });
-      return true;
+  async _launchBrowser() {
+    if (this._browser) {
+      await this._browser.close().catch(() => {});
+      this._browser = null;
     }
-    return false;
+    this._browser = await puppeteer.launch({ headless: true, args: BROWSER_ARGS });
+    this._browserPageCount = 0;
+    this.notify({ type: 'log', msg: 'Browser launched.' });
+  }
+
+  async _recycleBrowserIfNeeded() {
+    // Recycle browser every 10 pages to release Chromium internal memory
+    if (this._browserPageCount >= 10) {
+      this.notify({ type: 'log', msg: 'Recycling browser to free memory...' });
+      await this._launchBrowser();
+    }
+  }
+
+  _isMemoryOk() {
+    try {
+      const rss = process.memoryUsage.rss();
+      if (rss > 380 * 1024 * 1024) {
+        if (!this._limitHit) {
+          this._limitHit = true;
+          this.notify({ type: 'warn', msg: `Memory pressure (${(rss / 1048576).toFixed(0)} MB). Limiting crawl.` });
+        }
+        return false;
+      }
+    } catch {}
+    return true;
   }
 
   async crawl() {
+    this.notify({ type: 'log', msg: 'Launching headless Chromium...' });
+    await this._launchBrowser();
+
     let wave = [this.startUrl.href];
     for (let d = 0; d <= this.maxDepth && wave.length > 0; d++) {
+      if (this._limitHit || !this._isMemoryOk()) break;
       this.notify({ type: 'log', msg: `Depth ${d}: processing ${wave.length} page(s)...` });
-      const tasks = wave.map(u =>
-        this.limit(async () => {
-          if (this.visited.has(u)) return [];
-          this.visited.add(u);
-          return await this._crawlPage(u, d);
-        })
-      );
-      const results  = await Promise.all(tasks);
+
       const nextWave = [];
-      for (const links of results)
-        for (const link of links)
+      // Process pages sequentially to minimize memory
+      for (const u of wave) {
+        if (this.visited.has(u)) continue;
+        if (this._pagesRendered >= this._maxPages) {
+          this.notify({ type: 'warn', msg: `Page limit reached (${this._maxPages}). Stopping crawl.` });
+          this._limitHit = true;
+          break;
+        }
+        if (!this._isMemoryOk()) break;
+        await this._recycleBrowserIfNeeded();
+        this.visited.add(u);
+        const links = await this._crawlPage(u, d);
+        for (const link of links) {
           if (!this.visited.has(link) && !nextWave.includes(link)) nextWave.push(link);
-      wave = nextWave;
-      if (this._checkMemory()) {
-        this.notify({ type: 'warn', msg: 'Stopping crawl early due to memory pressure.' });
-        break;
+        }
       }
+      wave = nextWave;
     }
-    this.notify({ type: 'log', msg: `Crawl complete. ${this.assets.size} assets captured.` });
-    if (!this._memWarnSent) {
+
+    this.notify({ type: 'log', msg: `Crawl complete. ${this.assets.size} assets, ${this._pagesRendered} pages.` });
+
+    if (!this._limitHit) {
       this.notify({ type: 'log', msg: 'Discovering common server paths...' });
+      await this._recycleBrowserIfNeeded();
       await this._discoverCommonPaths();
       this.notify({ type: 'log', msg: 'Checking for source maps...' });
       await this._fetchSourceMaps();
     }
+
+    // Close browser before the heavy save phase
+    if (this._browser) {
+      await this._browser.close().catch(() => {});
+      this._browser = null;
+      this.notify({ type: 'log', msg: 'Browser closed. Freeing memory for save phase.' });
+    }
+
     this.notify({ type: 'log', msg: `Total assets: ${this.assets.size}. Rewriting and saving...` });
     await this._saveAll();
   }
 
   async _crawlPage(url, depth) {
-    const page = await this.browser.newPage();
+    let page;
     const discovered = [];
     try {
+      page = await this._browser.newPage();
+      this._browserPageCount++;
+      this._pagesRendered++;
       await page.setViewport({ width: 1920, height: 1080 });
       await page.setUserAgent(
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
         '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
       );
       await page.setRequestInterception(true);
-      page.on('request', req => req.continue().catch(() => {}));
+
+      // Block heavy media to save memory in Chromium
+      page.on('request', req => {
+        const rtype = req.resourceType();
+        const rurl = req.url();
+        if (BLOCKED_RESOURCE_TYPES.has(rtype) || BLOCKED_EXTENSIONS.test(rurl)) {
+          req.abort('blockedbyclient').catch(() => {});
+        } else {
+          req.continue().catch(() => {});
+        }
+      });
+
       const captured = new Map();
       page.on('response', async response => {
         const rurl = response.url();
@@ -377,24 +427,30 @@ class SiteCrawler {
           if (status < 200 || status >= 400) return;
           const ct = (response.headers()['content-type'] ?? '').split(';')[0].trim().toLowerCase();
           if (!ct || ct === 'text/event-stream') return;
+          const clen = parseInt(response.headers()['content-length'] || '0', 10);
+          if (clen > MAX_RESPONSE_SIZE) return;  // skip huge files
           const buf = await response.buffer();
+          if (buf.length > MAX_RESPONSE_SIZE) return;
           captured.set(rurl, { buf, ct });
         } catch { /* stream/disposed */ }
       });
+
       this.notify({ type: 'log', msg: `  -> Rendering: ${url}` });
-      await page.goto(url, { waitUntil: 'networkidle0', timeout: 90_000 });
-      await this._autoScroll(page);
-      await new Promise(r => setTimeout(r, 1_500));
+      // Use networkidle2 (2 connections remaining) - much faster, less memory
+      await page.goto(url, { waitUntil: 'networkidle2', timeout: 45_000 });
+      // Minimal scroll - just trigger one viewport worth of lazy content
+      await this._quickScroll(page);
+      await new Promise(r => setTimeout(r, 800));
       const html = await page.content();
 
-      // Stage the page HTML and all captured responses to disk immediately
       this._stage(url, Buffer.from(html, 'utf8'), 'text/html', true);
       for (const [u, { buf, ct }] of captured) {
         this._stage(u, buf, ct);
       }
-      captured.clear();  // free all buffers from this page
+      captured.clear();
 
       this.notify({ type: 'file', count: this.assets.size, name: new URL(url).pathname || '/' });
+
       if (depth < this.maxDepth) {
         const hrefs = await page.evaluate(origin =>
           [...document.querySelectorAll('a[href]')].flatMap(a => {
@@ -409,24 +465,20 @@ class SiteCrawler {
     } catch (err) {
       this.notify({ type: 'warn', msg: `  x ${url} - ${err.message}` });
     } finally {
-      await page.close().catch(() => {});
+      if (page) await page.close().catch(() => {});
     }
     return discovered;
   }
 
-  async _autoScroll(page) {
+  async _quickScroll(page) {
     try {
       await page.evaluate(async () => {
-        await new Promise(resolve => {
-          let pos = 0;
-          const timer = setInterval(() => {
-            const max = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight, 5000);
-            pos = Math.min(pos + 900, max);
-            window.scrollTo(0, pos);
-            if (pos >= max) { clearInterval(timer); window.scrollTo(0, 0); resolve(); }
-          }, 120);
-          setTimeout(() => { clearInterval(timer); resolve(); }, 12_000);
-        });
+        const max = Math.min(document.documentElement.scrollHeight, 5000);
+        for (let pos = 0; pos < max; pos += 1200) {
+          window.scrollTo(0, pos);
+          await new Promise(r => setTimeout(r, 80));
+        }
+        window.scrollTo(0, 0);
       });
     } catch { /* page closed */ }
   }
@@ -482,7 +534,8 @@ class SiteCrawler {
       '/browserconfig.xml', '/crossdomain.xml',
       '/.well-known/security.txt', '/humans.txt',
     ];
-    const page = await this.browser.newPage();
+    if (!this._browser) return;
+    const page = await this._browser.newPage();
     try {
       await page.setUserAgent(
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
@@ -525,7 +578,8 @@ class SiteCrawler {
       } catch { /* skip */ }
     }
     if (maps.length === 0) return;
-    const page = await this.browser.newPage();
+    if (!this._browser) return;
+    const page = await this._browser.newPage();
     try {
       for (const mapUrl of maps) {
         try {
