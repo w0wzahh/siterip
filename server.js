@@ -15,11 +15,33 @@ import mimeTypes from 'mime-types';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const jobs = new Map();
 const sseClients = new Map();
+
+const rateMap = new Map();
+const MAX_CONCURRENT = 3;
+let activeJobs = 0;
+
+function checkRate(ip) {
+  const now = Date.now();
+  const entry = rateMap.get(ip);
+  if (!entry || now > entry.reset) {
+    rateMap.set(ip, { count: 1, reset: now + 60000 });
+    return true;
+  }
+  entry.count++;
+  return entry.count <= 5;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of rateMap) {
+    if (now > entry.reset) rateMap.delete(ip);
+  }
+}, 120000);
 
 function isPrivateIP(ip) {
   return /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|127\.|0\.0\.0\.|169\.254\.|::1$|fc00:|fe80:|::ffff:127\.|::ffff:10\.|::ffff:192\.168\.|::ffff:172\.(1[6-9]|2\d|3[01])\.)/i.test(ip);
@@ -54,15 +76,25 @@ app.get('/api/progress/:jobId', (req, res) => {
   res.flushHeaders();
   const { jobId } = req.params;
   sseClients.set(jobId, res);
+  const heartbeat = setInterval(() => {
+    try { res.write(':heartbeat\n\n'); } catch { clearInterval(heartbeat); }
+  }, 15000);
   const job = jobs.get(jobId);
   if (job?.status === 'done')
     sendSSE(jobId, { type: 'done', jobId, files: job.files ?? 0, size: job.sizeMB ?? '0.00', tree: job.tree ?? null });
   else if (job?.status === 'error')
     sendSSE(jobId, { type: 'error', msg: job.errorMsg ?? 'Unknown error' });
-  req.on('close', () => sseClients.delete(jobId));
+  req.on('close', () => { clearInterval(heartbeat); sseClients.delete(jobId); });
 });
 
 app.post('/api/download', async (req, res) => {
+  const clientIp = req.ip || req.socket.remoteAddress;
+  if (!checkRate(clientIp)) {
+    return res.status(429).json({ error: 'Too many requests. Please wait a minute.' });
+  }
+  if (activeJobs >= MAX_CONCURRENT) {
+    return res.status(503).json({ error: 'Server is busy. Please try again shortly.' });
+  }
   const { url, maxDepth } = req.body ?? {};
   if (!url) return res.status(400).json({ error: 'URL is required.' });
   const depth = Math.min(Math.max(parseInt(maxDepth) || 2, 1), 5);
@@ -177,6 +209,7 @@ const CT_EXT = {
 };
 
 async function runDownload(jobId, url, tmpDir, depth) {
+  activeJobs++;
   const siteDir = path.join(tmpDir, 'site');
   fs.mkdirSync(siteDir, { recursive: true });
   let browser;
@@ -202,7 +235,7 @@ async function runDownload(jobId, url, tmpDir, depth) {
     const crawler = new SiteCrawler(browser, url, siteDir, depth, msg => sendSSE(jobId, msg));
     await crawler.crawl();
     const fileCount = crawler.fileCount;
-    sendSSE(jobId, { type: 'log', msg: `All done — ${fileCount} files on disk. Packaging...` });
+    sendSSE(jobId, { type: 'log', msg: `All done - ${fileCount} files on disk. Packaging...` });
     sendSSE(jobId, { type: 'zip', msg: 'Creating ZIP archive...' });
     const zipPath = path.join(tmpDir, 'site.zip');
     await new Promise((resolve, reject) => {
@@ -224,6 +257,7 @@ async function runDownload(jobId, url, tmpDir, depth) {
     sendSSE(jobId, { type: 'error', msg });
     fs.rmSync(tmpDir, { recursive: true, force: true });
   } finally {
+    activeJobs--;
     if (browser) await browser.close().catch(() => {});
   }
 }
@@ -260,7 +294,12 @@ class SiteCrawler {
           if (!this.visited.has(link) && !nextWave.includes(link)) nextWave.push(link);
       wave = nextWave;
     }
-    this.notify({ type: 'log', msg: `Crawl complete. ${this.assets.size} assets captured. Rewriting & saving...` });
+    this.notify({ type: 'log', msg: `Crawl complete. ${this.assets.size} assets captured.` });
+    this.notify({ type: 'log', msg: 'Discovering common server paths...' });
+    await this._discoverCommonPaths();
+    this.notify({ type: 'log', msg: 'Checking for source maps...' });
+    await this._fetchSourceMaps();
+    this.notify({ type: 'log', msg: `Total assets: ${this.assets.size}. Rewriting and saving...` });
     await this._saveAll();
   }
 
@@ -374,6 +413,75 @@ class SiteCrawler {
     if (CT_EXT[base]) return CT_EXT[base];
     const ext = mimeTypes.extension(base);
     return ext ? '.' + ext : '';
+  }
+
+  async _discoverCommonPaths() {
+    const paths = [
+      '/robots.txt', '/sitemap.xml', '/sitemap_index.xml',
+      '/manifest.json', '/manifest.webmanifest',
+      '/favicon.ico', '/favicon.svg',
+      '/browserconfig.xml', '/crossdomain.xml',
+      '/.well-known/security.txt', '/humans.txt',
+    ];
+    const page = await this.browser.newPage();
+    try {
+      await page.setUserAgent(
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+        '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+      );
+      for (const p of paths) {
+        const fullUrl = this.origin + p;
+        if (this.assets.has(fullUrl)) continue;
+        try {
+          const resp = await page.goto(fullUrl, { waitUntil: 'domcontentloaded', timeout: 8000 });
+          if (resp && resp.status() >= 200 && resp.status() < 400) {
+            const ct = (resp.headers()['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+            if (ct && ct !== 'text/html') {
+              const buf = await resp.buffer();
+              if (buf.length > 0 && buf.length < 5_000_000) {
+                this.assets.set(fullUrl, { buffer: buf, contentType: ct });
+                this.notify({ type: 'log', msg: `  + Found: ${p}` });
+              }
+            }
+          }
+        } catch { /* not available */ }
+      }
+    } finally {
+      await page.close().catch(() => {});
+    }
+  }
+
+  async _fetchSourceMaps() {
+    const maps = [];
+    for (const [url, asset] of this.assets) {
+      const ct = asset.contentType;
+      if (ct !== 'text/css' && !ct.includes('javascript')) continue;
+      try {
+        const content = asset.buffer.toString('utf8').slice(-500);
+        const match = content.match(/\/[/*]#\s*sourceMappingURL=(\S+)/);
+        if (!match || match[1].startsWith('data:')) continue;
+        const mapUrl = new URL(match[1], url).href;
+        if (!this.assets.has(mapUrl)) maps.push(mapUrl);
+      } catch { /* skip */ }
+    }
+    if (maps.length === 0) return;
+    const page = await this.browser.newPage();
+    try {
+      for (const mapUrl of maps) {
+        try {
+          const resp = await page.goto(mapUrl, { waitUntil: 'domcontentloaded', timeout: 8000 });
+          if (resp && resp.status() >= 200 && resp.status() < 400) {
+            const buf = await resp.buffer();
+            if (buf.length > 0 && buf.length < 10_000_000) {
+              this.assets.set(mapUrl, { buffer: buf, contentType: 'application/json' });
+              this.notify({ type: 'log', msg: `  + Source map: ${new URL(mapUrl).pathname}` });
+            }
+          }
+        } catch { /* not available */ }
+      }
+    } finally {
+      await page.close().catch(() => {});
+    }
   }
 
   async _saveAll() {
