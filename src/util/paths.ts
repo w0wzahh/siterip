@@ -27,6 +27,9 @@ export function urlToLocalPath(
     if (isPage) {
       if (hasExt && (contentType === 'text/html' || /\.html?$/i.test(p))) {
         local = path.posix.join(prefix, p.slice(1));
+        // .php/.aspx-style pages wouldn't render offline (unknown mime on
+        // serve.js, downloaded-not-shown on file://) — give them .html.
+        if (!/\.html?$/i.test(local)) local += '.html';
       } else {
         const stripped = p.replace(/\/$/, '');
         local = stripped

@@ -82,6 +82,17 @@ export function rewriteHtml(
   rwAttr('meta[property="og:image"]', 'content');
   rwAttr('meta[name="twitter:image"]', 'content');
 
+  // <meta http-equiv="refresh" content="5; url=/next"> — rewrite the target
+  $('meta[http-equiv="refresh"]').each((_, el) => {
+    const c = $(el).attr('content');
+    if (!c) return;
+    const m = c.match(/^(\s*\d+\s*;\s*url\s*=\s*)(.+?)\s*$/i);
+    if (!m) return;
+    const target = m[2].replace(/^['"]|['"]$/g, '');
+    const out = rw(target);
+    if (out !== target) $(el).attr('content', m[1] + out);
+  });
+
   $('[srcset], [data-srcset]').each((_, el) => {
     for (const attr of ['srcset', 'data-srcset']) {
       const srcset = $(el).attr(attr);

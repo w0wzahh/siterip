@@ -27,6 +27,12 @@ function parseOptions(body: Record<string, unknown>): CrawlOptions {
   };
 }
 
+/** True when `target` is `root` itself or lives strictly inside it. */
+function insideRoot(root: string, target: string): boolean {
+  const rel = path.relative(root, target);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
 export function createApp(publicDir: string): express.Express {
   const app = express();
   app.use(express.json({ limit: '1mb' }));
@@ -51,12 +57,14 @@ export function createApp(publicDir: string): express.Express {
       try { res.write(`data: ${JSON.stringify(e)}\n\n`); } catch { /* closed */ }
     });
 
-    if (job?.status === 'done') {
+    if (!job) {
+      res.write(`data: ${JSON.stringify({ type: 'error', msg: 'Job not found or expired.' })}\n\n`);
+    } else if (job.status === 'done') {
       res.write(`data: ${JSON.stringify({
         type: 'done', jobId, files: job.files ?? 0,
         size: job.sizeMB ?? '0.00', tree: job.tree ?? null,
       })}\n\n`);
-    } else if (job?.status === 'error') {
+    } else if (job.status === 'error') {
       res.write(`data: ${JSON.stringify({ type: 'error', msg: job.errorMsg ?? 'Unknown error' })}\n\n`);
     }
 
@@ -84,6 +92,13 @@ export function createApp(publicDir: string): express.Express {
     }
     const job = jobs.createJob(validUrl, parseOptions(req.body ?? {}));
     res.json({ jobId: job.id });
+  });
+
+  app.post('/api/cancel/:jobId', (req, res) => {
+    if (!jobs.cancelJob(req.params.jobId)) {
+      return res.status(400).json({ error: 'Job not running.' });
+    }
+    res.json({ ok: true });
   });
 
   app.get('/api/get/:jobId', (req, res) => {
@@ -115,7 +130,7 @@ export function createApp(publicDir: string): express.Express {
     }
     const rel = (req.params as Record<string, string>)[0] ?? '';
     const safe = path.normalize(path.join(job.siteDir, rel));
-    if (!safe.startsWith(path.normalize(job.siteDir))) return res.status(403).end();
+    if (!insideRoot(path.normalize(job.siteDir), safe)) return res.status(403).end();
     if (!fs.existsSync(safe) || !fs.statSync(safe).isFile()) {
       return res.status(404).json({ error: 'File not found.' });
     }
@@ -130,7 +145,7 @@ export function createApp(publicDir: string): express.Express {
     const rel = (req.params as Record<string, string>)[0] ?? '';
     const siteRoot = path.normalize(job.siteDir);
     const safe = rel ? path.normalize(path.join(siteRoot, rel)) : siteRoot;
-    if (!safe.startsWith(siteRoot)) return res.status(403).end();
+    if (!insideRoot(siteRoot, safe)) return res.status(403).end();
     if (!fs.existsSync(safe) || !fs.statSync(safe).isDirectory()) {
       return res.status(404).json({ error: 'Folder not found.' });
     }

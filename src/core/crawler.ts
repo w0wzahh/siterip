@@ -30,6 +30,8 @@ export class Crawler {
   private stageIdx = 0;
   private totalBytes = 0;
   private browser: BrowserManager;
+  private pending = new Set<Promise<void>>();
+  private aborted = false;
 
   constructor(
     private startUrl: URL,
@@ -74,7 +76,9 @@ export class Crawler {
   private stageCaptured(res: CapturedResponse): void {
     if (this.seen.has(res.url)) return;
     this.seen.add(res.url);
-    void (async () => {
+    // Tracked so saveAll() can't race ahead and orphan staged files —
+    // an un-awaited rejection here could take down the whole process.
+    const task = (async () => {
       let host: string;
       try { host = new URL(res.url).hostname; } catch { return; }
       if (!(await isPublicHost(host))) {
@@ -82,7 +86,20 @@ export class Crawler {
         return;
       }
       this.stage(res.url, res.body, res.contentType, false, res.resourceType, res.method);
-    })();
+    })().catch(() => {});
+    this.pending.add(task);
+    void task.finally(() => this.pending.delete(task));
+  }
+
+  /** Wait for in-flight host validations / staging writes to settle. */
+  private async drainPending(): Promise<void> {
+    while (this.pending.size) await Promise.allSettled([...this.pending]);
+  }
+
+  /** Stop the crawl. Closes the browser so in-flight navigations fail fast. */
+  abort(): void {
+    this.aborted = true;
+    void this.browser.close();
   }
 
   private memoryOk(): boolean {
@@ -105,6 +122,15 @@ export class Crawler {
   // ---------------- crawl ----------------
 
   async crawl(): Promise<void> {
+    try {
+      await this.crawlInternal();
+    } finally {
+      // Always release Chromium — a throw mid-crawl must not leak the process.
+      await this.browser.close();
+    }
+  }
+
+  private async crawlInternal(): Promise<void> {
     this.notify({ type: 'log', msg: `Target: ${this.startUrl.href}` });
     this.notify({ type: 'log', msg: `Depth ${this.opts.maxDepth} | concurrency ${this.opts.concurrency}` });
 
@@ -121,7 +147,7 @@ export class Crawler {
     const limit = pLimit(this.opts.concurrency);
     let wave = seed;
 
-    for (let d = 0; d <= this.opts.maxDepth && wave.length > 0; d++) {
+    for (let d = 0; d <= this.opts.maxDepth && wave.length > 0 && !this.aborted; d++) {
       if (this.limitHit || !this.memoryOk()) break;
       const fresh = wave.filter(u => !this.visited.has(u));
       if (!fresh.length) break;
@@ -131,6 +157,7 @@ export class Crawler {
       const results = await Promise.all(
         fresh.map(u =>
           limit(async () => {
+            if (this.aborted) return [] as string[];
             if (this.visited.has(u)) return [] as string[];
             if (this.pagesRendered >= this.opts.maxPages) {
               if (!this.limitHit) {
@@ -158,7 +185,9 @@ export class Crawler {
       msg: `Crawl done: ${this.pagesRendered} pages, ${this.assets.size} assets.`,
     });
 
-    if (!this.limitHit) {
+    await this.drainPending();
+
+    if (!this.limitHit && !this.aborted) {
       this.notify({ type: 'phase', phase: 'extras' });
       await fetchCommonPaths(
         this.origin,
@@ -170,6 +199,10 @@ export class Crawler {
     }
 
     await this.browser.close();
+    if (this.aborted) {
+      this.notify({ type: 'log', msg: 'Cancelled by user.' });
+      return;
+    }
     this.notify({ type: 'phase', phase: 'save' });
     this.notify({ type: 'log', msg: `Writing ${this.assets.size} files...` });
     await this.saveAll();
@@ -177,6 +210,7 @@ export class Crawler {
 
   private async crawlPage(url: string, depth: number): Promise<string[]> {
     const discovered: string[] = [];
+    if (this.aborted) return discovered;
     let lease;
     try {
       lease = await this.browser.acquire();
@@ -232,7 +266,8 @@ export class Crawler {
           if (!this.visited.has(h)) discovered.push(h);
       }
     } catch (err) {
-      this.notify({ type: 'warn', msg: `  x ${url} - ${(err as Error).message}` });
+      // Abort closes pages mid-flight — that's expected, not a warning.
+      if (!this.aborted) this.notify({ type: 'warn', msg: `  x ${url} - ${(err as Error).message}` });
     } finally {
       await capture.detach();
       await lease.release();
@@ -298,6 +333,10 @@ export class Crawler {
       try {
         const u = new URL(url);
         manifest[u.pathname + u.search] = lp;
+        // Cross-origin assets also get an absolute-URL key: runtime fetches
+        // carry the foreign host, and a bare pathname could collide with a
+        // same-origin file of the same name.
+        if (u.origin !== this.origin) manifest[u.href] = lp;
       } catch { /* skip */ }
     }
 

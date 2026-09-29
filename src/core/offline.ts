@@ -21,9 +21,8 @@ const SCOPE = self.registration.scope;
 
 function localFor(url) {
   const u = new URL(url, SCOPE);
-  const key1 = u.pathname + u.search;
-  const key2 = u.pathname;
-  const rel = MANIFEST[key1] || MANIFEST[key2];
+  // Absolute href first (cross-origin assets), then path+query, then path.
+  const rel = MANIFEST[u.href] || MANIFEST[u.pathname + u.search] || MANIFEST[u.pathname];
   return rel ? new URL(rel, SCOPE).href : null;
 }
 
@@ -92,7 +91,10 @@ http.createServer((req, res) => {
   if (!p || p === '/') p = '/index.html';
   if (p.endsWith('/')) p += 'index.html';
   const safe = path.normalize(path.join(ROOT, p));
-  if (!safe.startsWith(ROOT)) { res.writeHead(403); res.end(); return; }
+  // strict containment check — startsWith(ROOT) alone would pass for
+  // sibling paths sharing the prefix (e.g. ROOT 'site' vs 'site.zip')
+  const rel = path.relative(ROOT, safe);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) { res.writeHead(403); res.end(); return; }
   let file = safe;
   if (!fs.existsSync(file)) {
     const ext = path.extname(safe);

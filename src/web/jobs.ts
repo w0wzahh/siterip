@@ -21,6 +21,8 @@ export interface Job {
   sizeMB?: string;
   tree?: FileNode;
   errorMsg?: string;
+  crawler?: Crawler;
+  cancelRequested?: boolean;
   emitter: EventEmitter;
 }
 
@@ -42,6 +44,15 @@ export function subscribe(jobId: string, listener: (e: NotifyEvent) => void): ()
   if (!job) return () => {};
   job.emitter.on('event', listener);
   return () => job.emitter.off('event', listener);
+}
+
+/** Request cancellation of a running job. Returns false if not running. */
+export function cancelJob(id: string): boolean {
+  const job = jobs.get(id);
+  if (!job || job.status !== 'running') return false;
+  job.cancelRequested = true;
+  job.crawler?.abort();
+  return true;
 }
 
 export function createJob(url: string, opts: CrawlOptions): Job {
@@ -68,7 +79,9 @@ async function runJob(job: Job, opts: CrawlOptions): Promise<void> {
   const emit = (e: NotifyEvent) => job.emitter.emit('event', e);
   try {
     const crawler = new Crawler(new URL(job.url), job.siteDir, opts, emit);
+    job.crawler = crawler;
     await crawler.crawl();
+    if (job.cancelRequested) throw new Error('Cancelled by user.');
     emit({ type: 'zip', msg: 'Creating ZIP archive...' });
     job.zipPath = path.join(job.tmpDir, 'site.zip');
     const bytes = await zipDirectory(job.siteDir, job.zipPath);

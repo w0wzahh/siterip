@@ -18,6 +18,9 @@ Options:
   -d, --depth <n>         Crawl depth 0-5 (default: 2)
   -c, --concurrency <n>   Parallel pages 1-6 (default: 3)
   --max-pages <n>         Page cap (default: 150)
+  --max-size <mb>         Total archive cap in MB (default: 512)
+  --max-file <mb>         Max size per file in MB (default: 32)
+  --timeout <s>           Page load timeout in seconds (default: 45)
   --no-media              Skip video/audio
   --no-sw                 Don't inject offline service worker
   --no-sitemap            Don't use sitemaps for page discovery
@@ -45,6 +48,9 @@ async function main(): Promise<void> {
       }
       case '-c': case '--concurrency': opts.concurrency = Math.min(Math.max(+args[++i] || 3, 1), 6); break;
       case '--max-pages': opts.maxPages = +args[++i] || 150; break;
+      case '--max-size': opts.maxTotalBytes = (+args[++i] || 512) * 1048576; break;
+      case '--max-file': opts.maxFileBytes = (+args[++i] || 32) * 1048576; break;
+      case '--timeout': opts.pageTimeoutMs = Math.min(Math.max(+args[++i] || 45, 5), 300) * 1000; break;
       case '--no-media': opts.includeMedia = false; break;
       case '--no-sw': opts.injectServiceWorker = false; break;
       case '--no-sitemap': opts.followSitemaps = false; break;

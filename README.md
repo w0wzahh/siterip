@@ -6,6 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-f5aee8)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A5%2020-9ed66f)](package.json)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-a8d8ea)](tsconfig.json)
+[![Ko-fi](https://img.shields.io/badge/ko--fi-w0wzahh-ff8a75?logo=ko-fi)](https://ko-fi.com/w0wzahh)
 
 </div>
 
@@ -24,6 +25,7 @@ keep working when you open the archive offline.
 - **Offline replay** — each archive ships a `sw.js` service worker with a URL→file manifest, so client-side routes and captured API calls resolve without a network
 - **Parallel crawling** — configurable page concurrency with automatic browser recycling and OOM-safe disk streaming
 - **Sitemap discovery** — `robots.txt` + `sitemap.xml` are used for complete page coverage
+- **Cancellable jobs** — stop a rip mid-crawl from the UI or API
 - **Web UI, CLI & Docker** — same engine, three interfaces
 - **SSRF-hardened** — DNS-validated public-host checks (including redirect hops), rate limiting, capped jobs
 
@@ -51,6 +53,9 @@ Options:
   -d, --depth <n>         Crawl depth 0-5 (default: 2)
   -c, --concurrency <n>   Parallel pages 1-6 (default: 3)
   --max-pages <n>         Page cap (default: 150)
+  --max-size <mb>         Total archive cap in MB (default: 512)
+  --max-file <mb>         Max size per file in MB (default: 32)
+  --timeout <s>           Page load timeout in seconds (default: 45)
   --no-media              Skip video/audio
   --no-sw                 Don't inject offline service worker
   --no-sitemap            Don't use sitemaps for page discovery
@@ -69,6 +74,7 @@ docker run -p 7860:7860 siterip
 | Endpoint | Description |
 | --- | --- |
 | `POST /api/download` | Start a rip — body: `{ url, maxDepth, concurrency, includeMedia, offlineSw, followSitemaps, maxPages, maxTotalMB, pageTimeoutSec }` → `{ jobId }` |
+| `POST /api/cancel/:jobId` | Cancel a running rip |
 | `GET /api/progress/:jobId` | Server-Sent Events stream: `log`, `page`, `file`, `phase`, `zip`, `done`, `error` |
 | `GET /api/get/:jobId` | Download the finished ZIP |
 | `GET /api/tree/:jobId` | JSON file tree of the archive |
@@ -106,6 +112,11 @@ public/index.html    # Self-contained web UI
 Every fetched host is DNS-validated against private/internal IP ranges
 (including each redirect hop). Jobs are rate-limited per client and globally
 capped on concurrency, pages, assets and total bytes.
+
+## Support
+
+If SiteRip saved you some time, you can
+[buy me a coffee on Ko-fi](https://ko-fi.com/w0wzahh).
 
 ## License
 
