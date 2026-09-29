@@ -1,10 +1,19 @@
 {
   "name": "siterip",
-  "version": "2.0.0",
-  "description": "Download entire websites (incl. React/Vue/Angular) as ZIP archives",
+  "version": "3.0.0",
+  "description": "Download entire websites (incl. React/Vue/Angular SPAs) as browsable ZIP archives",
+  "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "start": "node server.js"
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "dev": "tsx src/server.ts",
+    "cli": "tsx src/cli.ts",
+    "test": "node --test --import tsx test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "archiver": "^7.0.1",
@@ -12,7 +21,14 @@
     "express": "^4.18.2",
     "mime-types": "^2.1.35",
     "p-limit": "^6.1.0",
-    "puppeteer": "^24.0.0",
-    "uuid": "^9.0.0"
+    "puppeteer": "^24.0.0"
+  },
+  "devDependencies": {
+    "@types/archiver": "^6.0.2",
+    "@types/express": "^4.17.21",
+    "@types/mime-types": "^2.1.4",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
   }
 }

@@ -1,7 +1,17 @@
 # syntax=docker/dockerfile:1
+
+# ---------- build stage ----------
+FROM node:22-slim AS build
+WORKDIR /app
+COPY package*.json tsconfig.json ./
+RUN npm ci
+COPY src ./src
+RUN npm run build && npm prune --omit=dev
+
+# ---------- runtime stage ----------
 FROM node:22-slim
 
-# Install Chromium system dependencies
+# Chromium system dependencies
 RUN apt-get update && apt-get install -y \
   ca-certificates fonts-liberation libasound2 libatk-bridge2.0-0 libatk1.0-0 \
   libc6 libcairo2 libcups2 libdbus-1-3 libexpat1 libfontconfig1 libgbm1 \
@@ -12,15 +22,17 @@ RUN apt-get update && apt-get install -y \
   --no-install-recommends && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+ENV NODE_ENV=production
+
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/dist ./dist
 COPY package*.json ./
-RUN npm ci --omit=dev
+COPY public ./public
 
-# Let Puppeteer download its own Chromium inside the container
+# Download Puppeteer's Chrome into the image
 RUN npx puppeteer browsers install chrome
-
-COPY . .
 
 ENV PORT=7860
 EXPOSE 7860
 
-CMD ["node", "server.js"]
+CMD ["node", "dist/server.js"]
