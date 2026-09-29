@@ -8,8 +8,6 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-a8d8ea)](tsconfig.json)
 [![Ko-fi](https://img.shields.io/badge/ko--fi-w0wzahh-ff8a75?logo=ko-fi)](https://ko-fi.com/w0wzahh)
 
-</div>
-
 ## Why SiteRip?
 
 Most "save page" tools grab the HTML and leave the JavaScript-rendered web behind.
