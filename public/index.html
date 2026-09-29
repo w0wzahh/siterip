@@ -159,6 +159,9 @@
   .card:nth-of-type(2) { animation-delay: .08s; }
   .card:nth-of-type(3) { animation-delay: .14s; }
   .card:nth-of-type(4) { animation-delay: .2s; }
+  .card:nth-of-type(5) { animation-delay: .26s; }
+  .card:nth-of-type(6) { animation-delay: .32s; }
+  .card:nth-of-type(7) { animation-delay: .38s; }
   @keyframes rise { to { opacity: 1; transform: none; } }
   .hidden { display: none !important; }
 
@@ -175,6 +178,7 @@
   /* retro window chrome strip */
   .card-head {
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    flex-wrap: wrap;
     padding: 11px 16px;
     background: var(--cream);
     border-bottom: var(--bw) solid var(--ink);
@@ -542,6 +546,59 @@
     outline: 3px solid var(--pink); outline-offset: 2px;
   }
 
+  /* mini header buttons (copy / cancel / clear) */
+  .btn.mini {
+    padding: 6px 13px; font-size: 10.5px;
+    border-width: 2px; border-radius: 7px;
+    box-shadow: 3px 3px 0 var(--ink);
+  }
+  .btn.mini:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ink); }
+  .btn.mini:active { transform: translate(3px, 3px); box-shadow: 0 0 0 var(--ink); }
+  .btn.danger { background: var(--red); }
+  .btn.accent { background: var(--blue); }
+  .head-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+
+  /* recent rips list */
+  .hrow { display: flex; align-items: center; gap: 10px; padding: 11px 16px; }
+  .hrow + .hrow { border-top: 2px solid var(--ink); }
+  .hrow .hname {
+    flex: 1; min-width: 0;
+    font-size: 13.5px; font-weight: 700; color: var(--label);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .hrow .hname small {
+    display: block; font: 500 11px var(--mono);
+    color: var(--secondary); margin-top: 1px;
+  }
+
+  /* about / credits */
+  .about, .credits { padding: 16px 18px 18px; }
+  .about p { font-size: 13.5px; line-height: 1.55; color: var(--label); }
+  .about ul {
+    list-style: none; margin-top: 12px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .about li {
+    display: flex; gap: 9px; align-items: flex-start;
+    font: 500 12px/1.5 var(--mono); color: var(--secondary);
+  }
+  .about li::before { content: '✦'; color: var(--orange); flex-shrink: 0; }
+  .about .note {
+    margin-top: 13px; font: 600 11.5px/1.5 var(--mono); color: #000;
+    background: var(--yellow);
+    border: 2px solid var(--ink); border-radius: 8px; padding: 8px 12px;
+  }
+  .credits .who { font-size: 16px; font-weight: 700; }
+  .credits .who b {
+    display: inline-block; margin-left: 4px; padding: 0 7px;
+    background: var(--pink); color: #000;
+    border: 2px solid var(--ink); border-radius: 6px;
+  }
+  .credits .sub { font: 500 12px var(--mono); color: var(--secondary); margin-top: 7px; }
+  .credit-actions { display: flex; gap: 12px; margin-top: 15px; flex-wrap: wrap; }
+  .credit-actions .btn { flex: 1; min-width: 150px; }
+  .credit-actions .btn svg { width: 15px; height: 15px; }
+
   footer {
     text-align: center; font: 700 10.5px var(--mono);
     letter-spacing: .12em; text-transform: uppercase;
@@ -684,6 +741,10 @@
         <span><b id="stTime">0:00</b></span>
         <span id="stPhase"></span>
       </div>
+      <div class="head-actions">
+        <button class="btn mini" id="copyLog" type="button">Copy</button>
+        <button class="btn mini danger hidden" id="cancelBtn" type="button">Cancel</button>
+      </div>
     </div>
     <div class="progress"><i id="progressBar"></i></div>
     <div id="log"></div>
@@ -715,6 +776,14 @@
     </div>
   </section>
 
+  <section class="card hidden" id="historyCard">
+    <div class="card-head">
+      <span class="status-row"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="card-title">Recent rips</span></span>
+      <button class="btn mini" id="clearHist" type="button">Clear</button>
+    </div>
+    <div id="history"></div>
+  </section>
+
   <section class="card hidden" id="errCard">
     <div class="err-banner">
       <div class="err-badge" aria-hidden="true">
@@ -726,6 +795,47 @@
     </div>
   </section>
 
+  <section class="card">
+    <div class="card-head">
+      <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span class="card-title">About</span>
+    </div>
+    <div class="about">
+      <p>SiteRip renders every page in headless Chromium and passively records the entire network conversation via the DevTools Protocol — markup, styles, scripts, images, fonts and API responses. Links are then rewritten to local paths and a service worker is injected, so the archive keeps working fully offline.</p>
+      <ul>
+        <li>Real browser renders — the JS-built DOM is captured, not just raw HTML</li>
+        <li>Sitemap + link crawling for complete page coverage</li>
+        <li>SPA routes &amp; captured API calls replay offline via sw.js</li>
+      </ul>
+      <div class="note">Server-side logic (logins, forms, live APIs) can't be archived — no tool can clone a backend.</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span class="card-title">Credits</span>
+    </div>
+    <div class="credits">
+      <div class="who">Made by <b>w0wzahh</b></div>
+      <div class="sub">If SiteRip saved you some time, you can buy me a coffee.</div>
+      <div class="credit-actions">
+        <a class="btn primary" href="https://ko-fi.com/w0wzahh" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 8h1.5a3 3 0 0 1 0 6H17"/><path d="M4 8h13v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z"/><path d="M8 2.5v2M12 2.5v2"/>
+          </svg>
+          Support on Ko-fi
+        </a>
+        <a class="btn accent" href="https://github.com/w0wzahh/siterip" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 .5A11.5 11.5 0 0 0 .5 12a11.5 11.5 0 0 0 7.86 10.91c.58.11.79-.25.79-.56v-2c-3.2.7-3.87-1.54-3.87-1.54-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.23-1.28-5.23-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.8 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.38-5.25 5.67.41.35.78 1.05.78 2.12v3.14c0 .31.21.68.8.56A11.5 11.5 0 0 0 23.5 12 11.5 11.5 0 0 0 12 .5z"/>
+          </svg>
+          Source code
+        </a>
+      </div>
+    </div>
+  </section>
+
   <footer>SiteRip v3 · headless Chromium + service-worker replay</footer>
 </div>
 
@@ -733,6 +843,7 @@
 const $ = id => document.getElementById(id);
 const logEl = $('log');
 let es = null;
+let currentJob = null;
 
 /* ---------- iOS steppers ---------- */
 document.querySelectorAll('.stepper').forEach(st => {
@@ -814,6 +925,8 @@ function reset() {
   $('stPhase').textContent = 'connecting';
   setSpinner('');
   startClock();
+  $('cancelBtn').classList.remove('hidden');
+  $('cancelBtn').disabled = false;
   $('progressBar').style.display = '';
   $('resultCard').classList.add('hidden');
   $('errCard').classList.add('hidden');
@@ -904,6 +1017,7 @@ async function start() {
 }
 
 function listen(jobId) {
+  currentJob = jobId;
   if (es) es.close();
   es = new EventSource(`/api/progress/${jobId}`);
   es.onmessage = ev => {
@@ -940,6 +1054,8 @@ function finish(m, jobId) {
   $('doneMeta').textContent = `${m.files} files · ${m.size} MB · ${jobId.slice(0, 8)}`;
   $('dlZip').href = `/api/get/${jobId}`;
   if (m.tree) renderTree(m.tree, $('tree'), jobId);
+  $('cancelBtn').classList.add('hidden');
+  saveRip({ id: jobId, name: $('doneName').textContent, files: m.files, size: m.size, ts: Date.now() });
   $('resultCard').classList.remove('hidden');
   confetti();
   $('resultCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -948,6 +1064,7 @@ function finish(m, jobId) {
 function showErr(msg) {
   if (es) { es.close(); es = null; }
   stopClock();
+  $('cancelBtn').classList.add('hidden');
   $('ripBtn').disabled = false;
   log('error: ' + msg, 'err');
   setSpinner('failed');
@@ -958,10 +1075,72 @@ function showErr(msg) {
   $('consoleCard').classList.remove('hidden');
 }
 
+/* ---------- cancel ---------- */
+$('cancelBtn').onclick = async () => {
+  if (!currentJob) return;
+  $('cancelBtn').disabled = true;
+  try { await fetch(`/api/cancel/${currentJob}`, { method: 'POST' }); } catch { /* offline */ }
+};
+
+/* ---------- copy log ---------- */
+$('copyLog').onclick = async () => {
+  const flash = () => {
+    $('copyLog').textContent = 'Copied!';
+    setTimeout(() => { $('copyLog').textContent = 'Copy'; }, 1200);
+  };
+  try { await navigator.clipboard.writeText(logEl.innerText); flash(); }
+  catch {
+    const ta = document.createElement('textarea');
+    ta.value = logEl.innerText; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); flash(); } catch { /* give up */ }
+    ta.remove();
+  }
+};
+
+/* ---------- recent rips (jobs live server-side ~1h) ---------- */
+function loadRips() {
+  try { return JSON.parse(localStorage.getItem('siterip:rips') || '[]'); } catch { return []; }
+}
+function ago(ts) {
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60); if (m < 60) return m + 'm ago';
+  const h = Math.floor(m / 60); if (h < 24) return h + 'h ago';
+  return Math.floor(h / 24) + 'd ago';
+}
+function renderHistory() {
+  const rips = loadRips(), box = $('history');
+  if (!rips.length) { $('historyCard').classList.add('hidden'); return; }
+  box.innerHTML = '';
+  for (const r of rips) {
+    const row = document.createElement('div');
+    row.className = 'hrow';
+    const nm = document.createElement('div');
+    nm.className = 'hname';
+    nm.textContent = r.name;
+    const sub = document.createElement('small');
+    sub.textContent = `${r.files} files · ${r.size} MB · ${ago(r.ts)}`;
+    nm.appendChild(sub);
+    const a = document.createElement('a');
+    a.className = 'tdl'; a.textContent = 'ZIP'; a.href = `/api/get/${r.id}`;
+    row.append(nm, a);
+    box.appendChild(row);
+  }
+  $('historyCard').classList.remove('hidden');
+}
+function saveRip(entry) {
+  const rips = [entry, ...loadRips().filter(r => r.id !== entry.id)].slice(0, 8);
+  try { localStorage.setItem('siterip:rips', JSON.stringify(rips)); } catch { /* full/private */ }
+  renderHistory();
+}
+$('clearHist').onclick = () => { try { localStorage.removeItem('siterip:rips'); } catch { /* noop */ } renderHistory(); };
+
 $('ripBtn').onclick = start;
 $('againBtn').onclick = () => { $('resultCard').classList.add('hidden'); $('url').select(); };
 $('url').addEventListener('keydown', e => { if (e.key === 'Enter') start(); });
 try { $('url').value = localStorage.getItem('siterip:url') || ''; } catch { /* private mode */ }
+renderHistory();
 </script>
 </body>
 </html>
