@@ -68,6 +68,29 @@ docker build -t siterip .
 docker run -p 7860:7860 siterip
 ```
 
+## Deploy online
+
+### Netlify (quick-rip mode)
+
+[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/w0wzahh/siterip)
+
+One click deploys the full UI plus a serverless "quick-rip" function
+(`netlify/functions/rip.ts`) that runs headless Chromium via
+[`@sparticuz/chromium`](https://github.com/Sparticuz/chromium). Paste a URL,
+get a ZIP — the UI auto-detects hosted mode.
+
+**Hosted limits** (Netlify functions: 60 s execution / 20 MB response):
+
+- Single page + its assets, up to ~16 MB per rip
+- No multi-page crawling, job history, or file tree
+
+### Full crawler
+
+For the complete engine (multi-page crawls, SSE progress, file tree,
+cancellation) use a persistent Node host — Docker on a VPS,
+[Render](https://render.com), [Railway](https://railway.com), or
+[Fly.io](https://fly.io). The included `Dockerfile` works as-is.
+
 ## Web API
 
 | Endpoint | Description |

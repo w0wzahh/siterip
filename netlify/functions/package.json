@@ -1,0 +1,9 @@
+{
+  "name": "siterip-netlify-functions",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@sparticuz/chromium": "^152.0.0",
+    "puppeteer-core": "^24.0.0"
+  }
+}

@@ -38,12 +38,13 @@ export class Crawler {
     private outDir: string,
     private opts: CrawlOptions,
     private notify: Notify,
+    browser?: BrowserManager,
   ) {
     this.origin = startUrl.origin;
     this.stageDir = path.join(outDir, '..', '_stage');
     fs.mkdirSync(this.stageDir, { recursive: true });
     fs.mkdirSync(outDir, { recursive: true });
-    this.browser = new BrowserManager(40, notify);
+    this.browser = browser ?? new BrowserManager(40, notify);
   }
 
   // ---------------- staging ----------------

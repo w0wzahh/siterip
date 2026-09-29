@@ -30,6 +30,9 @@ export interface PageLease {
   release: () => Promise<void>;
 }
 
+/** A function that launches (or hands out) a Puppeteer Browser. */
+export type Launcher = () => Promise<Browser>;
+
 /**
  * Owns the Chromium instance. Pages are handed out via acquire()/release().
  * The browser is recycled after `recycleAfter` page loads (Chromium leaks
@@ -45,14 +48,16 @@ export class BrowserManager {
   constructor(
     private recycleAfter = 40,
     private notify: Notify = () => {},
+    private launch: Launcher = () =>
+      puppeteer.launch({ headless: true, args: BROWSER_ARGS }),
   ) {}
 
   private async ensure(): Promise<Browser> {
     if (this.closed) throw new Error('BrowserManager is closed');
     if (this.browser) return this.browser;
     if (!this.launching) {
-      this.launching = puppeteer
-        .launch({ headless: true, args: BROWSER_ARGS })
+      this.launching = this
+        .launch()
         .then(b => {
           this.browser = b;
           this.launching = null;

@@ -220,6 +220,13 @@
     font: 500 15px var(--mono); color: var(--label); height: 100%;
   }
   .url-field input::placeholder { color: var(--tertiary-label); }
+  .hnote {
+    display: flex; gap: 8px; align-items: flex-start;
+    font: 600 11.5px/1.5 var(--mono); color: #000;
+    background: var(--blue);
+    border: 2px solid var(--ink); border-radius: 8px; padding: 8px 12px;
+  }
+  .hnote svg { width: 15px; height: 15px; flex-shrink: 0; margin-top: 1px; }
 
   /* ============================================================
      Brutal buttons — press into the shadow
@@ -660,6 +667,12 @@
         <input type="url" id="url" placeholder="https://example.com" spellcheck="false" autocomplete="off" enterkeyhint="go" />
       </div>
       <button class="btn primary" id="ripBtn">Download Site</button>
+      <div class="hnote hidden" id="hostedNote">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 10a5.5 5.5 0 0 0-10.9-1.3A4.5 4.5 0 0 0 7.5 17.5H18a3.5 3.5 0 0 0 0-7z"/>
+        </svg>
+        <span>Hosted quick-rip — single page + its assets (≤16 MB). For full-site crawls, self-host with Node or Docker.</span>
+      </div>
     </div>
   </section>
 
@@ -845,6 +858,8 @@ const $ = id => document.getElementById(id);
 const logEl = $('log');
 let es = null;
 let currentJob = null;
+let hosted = null;      // set when running on Netlify (serverless quick-rip)
+let hostedCtl = null;   // AbortController for the hosted request
 
 /* ---------- iOS steppers ---------- */
 document.querySelectorAll('.stepper').forEach(st => {
@@ -992,6 +1007,7 @@ async function start() {
   try { localStorage.setItem('siterip:url', url); } catch { /* private mode */ }
   reset();
   $('ripBtn').disabled = true;
+  if (hosted) { startHosted(url); return; }
   try {
     const res = await fetch('/api/download', {
       method: 'POST',
@@ -1062,6 +1078,61 @@ function finish(m, jobId) {
   $('resultCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
+/* ---------- hosted (Netlify) quick-rip ---------- */
+// When deployed on Netlify there's no /api — a serverless function rips a
+// single page in cloud Chromium and streams back the ZIP.
+async function startHosted(url) {
+  log('hosted quick-rip — one page + its assets', 'warn');
+  log('rendering in cloud chromium…');
+  $('stPhase').textContent = 'cloud';
+  $('stPages').textContent = '1';
+  hostedCtl = new AbortController();
+  try {
+    const res = await fetch('/.netlify/functions/rip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+      signal: hostedCtl.signal,
+    });
+    if (!res.ok) {
+      let msg = `Rip failed (${res.status})`;
+      try { msg = (await res.json()).error || msg; } catch { /* non-JSON */ }
+      throw new Error(msg);
+    }
+    const blob = await res.blob();
+    let host = 'site';
+    try { host = new URL(url).hostname; } catch { /* keep default */ }
+    const name = host + '.zip';
+    const href = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = href; a.download = name; a.click();
+    finishHosted(name, blob.size, href);
+  } catch (e) {
+    showErr(e.name === 'AbortError' ? 'Cancelled by user.' : e.message);
+  } finally {
+    hostedCtl = null;
+  }
+}
+
+function finishHosted(name, bytes, href) {
+  stopClock();
+  $('ripBtn').disabled = false;
+  const mb = (bytes / 1048576).toFixed(2);
+  log(`done — ${mb} MB`, 'ok');
+  $('stPhase').textContent = 'complete';
+  setSpinner('done');
+  $('progressBar').style.display = 'none';
+  $('cancelBtn').classList.add('hidden');
+  $('doneName').textContent = name;
+  $('doneMeta').textContent = `1 page · ${mb} MB · hosted quick-rip`;
+  $('dlZip').href = href;
+  $('dlZip').setAttribute('download', name);
+  saveRip({ name, files: 1, size: mb, ts: Date.now() });
+  $('resultCard').classList.remove('hidden');
+  confetti();
+  $('resultCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
 function showErr(msg) {
   if (es) { es.close(); es = null; }
   stopClock();
@@ -1078,6 +1149,10 @@ function showErr(msg) {
 
 /* ---------- cancel ---------- */
 $('cancelBtn').onclick = async () => {
+  if (hosted) {
+    if (hostedCtl) { $('cancelBtn').disabled = true; hostedCtl.abort(); }
+    return;
+  }
   if (!currentJob) return;
   $('cancelBtn').disabled = true;
   try { await fetch(`/api/cancel/${currentJob}`, { method: 'POST' }); } catch { /* offline */ }
@@ -1124,7 +1199,12 @@ function renderHistory() {
     sub.textContent = `${r.files} files · ${r.size} MB · ${ago(r.ts)}`;
     nm.appendChild(sub);
     const a = document.createElement('a');
-    a.className = 'tdl'; a.textContent = 'ZIP'; a.href = `/api/get/${r.id}`;
+    if (r.id) {
+      a.className = 'tdl'; a.textContent = 'ZIP'; a.href = `/api/get/${r.id}`;
+    } else {
+      a.className = 'tdl'; a.textContent = 'done'; a.style.cursor = 'default';
+      a.style.opacity = '.55'; a.onclick = e => e.preventDefault();
+    }
     row.append(nm, a);
     box.appendChild(row);
   }
@@ -1142,6 +1222,17 @@ $('againBtn').onclick = () => { $('resultCard').classList.add('hidden'); $('url'
 $('url').addEventListener('keydown', e => { if (e.key === 'Enter') start(); });
 try { $('url').value = localStorage.getItem('siterip:url') || ''; } catch { /* private mode */ }
 renderHistory();
+
+/* ---------- hosted-mode detection (Netlify serverless) ---------- */
+fetch('/.netlify/functions/rip', { headers: { accept: 'application/json' } })
+  .then(r => (r.ok && (r.headers.get('content-type') || '').includes('json')) ? r.json() : null)
+  .then(j => {
+    if (j && j.mode === 'netlify-quickrip') {
+      hosted = j;
+      $('hostedNote').classList.remove('hidden');
+    }
+  })
+  .catch(() => { /* self-hosted — full API available */ });
 </script>
 </body>
 </html>
