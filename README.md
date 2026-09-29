@@ -1,14 +1,3 @@
----
-title: SiteRip
-emoji: 🌐
-colorFrom: red
-colorTo: gray
-sdk: docker
-app_port: 7860
----
-
-<div align="center">
-
 # SiteRip
 
 **Download entire websites — pages, assets and SPA routes — as self-contained, offline-browsable ZIP archives.**
