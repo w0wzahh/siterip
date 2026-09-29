@@ -8,6 +8,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-a8d8ea)](tsconfig.json)
 [![Ko-fi](https://img.shields.io/badge/ko--fi-w0wzahh-ff8a75?logo=ko-fi)](https://ko-fi.com/w0wzahh)
 [![Site](https://img.shields.io/badge/site-w0wzahh.github.io%2Fsiterip-ff9f5a)](https://w0wzahh.github.io/siterip/)
+[![Live app](https://img.shields.io/badge/live-siterip--w0wzahh.netlify.app-9ed66f)](https://siterip-w0wzahh.netlify.app)
 
 ## Why SiteRip?
 
@@ -73,6 +74,8 @@ docker run -p 7860:7860 siterip
 ### Netlify (quick-rip mode)
 
 [![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/w0wzahh/siterip)
+
+**Try it live: [siterip-w0wzahh.netlify.app](https://siterip-w0wzahh.netlify.app)**
 
 One click deploys the full UI plus a serverless "quick-rip" function
 (`netlify/functions/rip.ts`) that runs headless Chromium via

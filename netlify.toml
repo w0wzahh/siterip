@@ -3,7 +3,9 @@
 # — Netlify functions cap at 60s, so the hosted mode rips one page + its assets.
 
 [build]
-  command = "npm run build"
+  # node_modules/.bin shims break when the project path contains '&' —
+  # invoking tsc.js directly works identically on Netlify CI and Windows.
+  command = "node node_modules/typescript/lib/tsc.js -p tsconfig.json"
   publish = "public"
   functions = "netlify/functions"
 
