@@ -7,6 +7,7 @@
 [![Node](https://img.shields.io/badge/node-%E2%89%A5%2020-9ed66f)](package.json)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-a8d8ea)](tsconfig.json)
 [![Ko-fi](https://img.shields.io/badge/ko--fi-w0wzahh-ff8a75?logo=ko-fi)](https://ko-fi.com/w0wzahh)
+[![Site](https://img.shields.io/badge/site-w0wzahh.github.io%2Fsiterip-ff9f5a)](https://w0wzahh.github.io/siterip/)
 
 ## Why SiteRip?
 
