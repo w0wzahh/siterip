@@ -1,0 +1,12 @@
+{
+  // Assets-only Worker — no worker script, just serves docs/ statically.
+  // docs/_headers is applied by the static-assets runtime automatically.
+  "name": "siterip",
+  "compatibility_date": "2026-10-03",
+  "assets": {
+    "directory": "./docs",
+  },
+  "routes": [
+    { "pattern": "siterip.w0wzahh.link", "custom_domain": true },
+  ],
+}
