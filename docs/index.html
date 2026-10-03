@@ -3,47 +3,55 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<meta name="theme-color" content="#e9e3f5">
+<meta name="theme-color" content="#fdf1d6">
 <meta name="description" content="SiteRip — download entire websites, including SPAs, as offline-browsable ZIP archives.">
 <title>SiteRip — Website Downloader</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700&family=Lexend+Mega:wght@700;800;900&family=Caveat:wght@600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
+  /* w0wzahh.link design tokens — same palette/fonts as the main site */
   :root {
-    --font: 'Space Grotesk', -apple-system, 'Segoe UI', Roboto, sans-serif;
-    --display: 'Archivo Black', 'Space Grotesk', Impact, 'Arial Black', sans-serif;
-    --mono: 'Space Mono', ui-monospace, 'Cascadia Code', Menlo, Consolas, monospace;
+    --font: 'Archivo', ui-sans-serif, system-ui, sans-serif;
+    --display: 'Lexend Mega', 'Archivo', ui-sans-serif, sans-serif;
+    --marker: 'Caveat', cursive;
+    --mono: 'Space Mono', ui-monospace, monospace;
     --ease: cubic-bezier(0.32, 0.72, 0, 1);
-    --bw: 3px;
+    --bw: 2px;
     --radius: 14px;
     --radius-sm: 9px;
-    --bg: #e9e3f5;
-    --dot: rgba(0, 0, 0, 0.13);
+    --bg: hsl(54, 92%, 88%);
     --card: #ffffff;
     --cream: #fff3df;
     --ink: #000000;
-    --label: #000000;
+    --main: hsl(49, 100%, 49%);
     --secondary: #4a4458;
-    --yellow: #ffdb58;
-    --pink: #f5aee8;
-    --green: #9ed66f;
-    --blue: #a8d8ea;
-    --orange: #ff9f5a;
-    --red: #ff8a75;
+    --shadow: 4px 4px 0 var(--ink);
+    --shadow-lg: 7px 7px 0 var(--ink);
+    --chart-1: #FACC00;
+    --chart-2: #7A83FF;
+    --chart-3: #FF4D50;
+    --chart-4: #00D696;
+    --chart-5: #0099FF;
   }
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  ::selection { background: var(--main); color: var(--ink); }
+  html { scroll-behavior: smooth; }
   body {
     font-family: var(--font);
-    color: var(--label);
-    background: var(--bg);
-    background-image: radial-gradient(var(--dot) 1.4px, transparent 1.4px);
-    background-size: 22px 22px;
+    font-weight: 500;
+    color: var(--ink);
+    background-color: var(--bg);
+    background-image:
+      linear-gradient(to right, rgba(0,0,0,.07) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(0,0,0,.07) 1px, transparent 1px);
+    background-size: 32px 32px;
     -webkit-font-smoothing: antialiased;
     overflow-x: hidden;
   }
+  h1, h2, h3 { font-family: var(--display); font-weight: 700; }
 
   .page {
     max-width: 760px; margin: 0 auto;
@@ -62,24 +70,43 @@
   @keyframes rise { to { opacity: 1; transform: none; } }
   .appicon {
     width: 84px; height: 84px;
-    border: var(--bw) solid var(--ink); border-radius: 20px;
-    background: var(--yellow);
-    box-shadow: 7px 7px 0 var(--ink);
+    border: var(--bw) solid var(--ink); border-radius: var(--radius);
+    background: var(--main);
+    box-shadow: var(--shadow-lg);
     display: grid; place-items: center;
     transform: rotate(-4deg);
     transition: transform .2s var(--ease);
   }
   .appicon:hover { transform: rotate(3deg) scale(1.06); }
   .appicon svg { width: 42px; height: 42px; }
-  h1 {
-    font: 400 52px/1.05 var(--display);
-    text-transform: uppercase; letter-spacing: .01em;
+  .chip {
+    display: inline-block;
+    font: 700 12px var(--mono); letter-spacing: .04em;
+    border: var(--bw) solid var(--ink); border-radius: var(--radius-sm);
+    background: var(--card); padding: 4px 12px;
+    box-shadow: var(--shadow);
   }
-  h1 span { background: var(--pink); border: var(--bw) solid var(--ink); border-radius: 10px; padding: 0 12px; display: inline-block; box-shadow: 4px 4px 0 var(--ink); }
+  h1 {
+    font-size: clamp(2.6rem, 9vw, 4.6rem);
+    line-height: 1.02; text-transform: uppercase;
+    letter-spacing: -.5px;
+  }
+  h1 .fill {
+    background: var(--main); border: var(--bw) solid var(--ink);
+    border-radius: 10px; padding: 0 12px; display: inline-block;
+    box-shadow: var(--shadow); transform: rotate(-1deg);
+  }
+  .outline { -webkit-text-stroke: 3px var(--ink); color: transparent; }
+  .glitch { transition: text-shadow .1s steps(2, end); }
+  .glitch:hover { text-shadow: 3px 0 var(--chart-3), -3px 0 var(--chart-5); }
   .tagline {
     font: 500 14px/1.6 var(--mono); color: var(--secondary); max-width: 480px;
   }
   .hero-actions { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; margin-top: 6px; }
+  .hero-note {
+    font-family: var(--marker); font-weight: 600; font-size: 22px;
+    color: var(--ink); transform: rotate(-4deg); margin-top: -4px;
+  }
   .burst {
     position: absolute; top: -20px; right: 8%;
     width: 56px; height: 56px;
@@ -92,50 +119,51 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* ---------- buttons ---------- */
+  /* ---------- buttons — press-down on hover, like w0wzahh.link ---------- */
   .btn {
     border: var(--bw) solid var(--ink); cursor: pointer; text-decoration: none;
-    font: 700 14px var(--font); letter-spacing: .06em; text-transform: uppercase;
-    border-radius: var(--radius-sm); padding: 14px 26px;
+    font: 700 14px var(--font); letter-spacing: .02em; text-transform: uppercase;
+    border-radius: var(--radius-sm); padding: 12px 22px;
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-    color: #000; box-shadow: 4px 4px 0 var(--ink);
+    color: var(--ink); box-shadow: var(--shadow);
     transition: transform .1s ease, box-shadow .1s ease;
   }
-  .btn:hover { transform: translate(-1px, -1px); box-shadow: 5px 5px 0 var(--ink); }
-  .btn:active { transform: translate(4px, 4px); box-shadow: 0 0 0 var(--ink); }
+  .btn:hover { transform: translate(4px, 4px); box-shadow: 0 0 0 var(--ink); }
   .btn svg { width: 16px; height: 16px; }
-  .btn.primary { background: var(--yellow); }
-  .btn.pink { background: var(--pink); }
-  .btn.blue { background: var(--blue); }
-  .btn:focus-visible { outline: 3px solid var(--pink); outline-offset: 2px; }
+  .btn.primary { background: var(--main); }
+  .btn.neutral { background: var(--card); }
+  .btn.c2 { background: var(--chart-2); }
+  .btn.c4 { background: var(--chart-4); }
+  .btn:focus-visible { outline: 3px solid var(--chart-5); outline-offset: 2px; }
 
-  /* ---------- ticker ---------- */
-  .ticker {
+  /* ---------- marquee — white band, 2px borders, like the main site ---------- */
+  .marquee {
     overflow: hidden;
-    background: var(--pink);
+    background: var(--card);
     border: var(--bw) solid var(--ink);
     border-radius: var(--radius-sm);
-    box-shadow: 5px 5px 0 var(--ink);
+    box-shadow: var(--shadow);
     rotate: -1deg;
     opacity: 0; animation: rise .5s var(--ease) .08s forwards;
   }
-  .ticker-track {
+  .marquee-track {
     display: flex; align-items: center; width: max-content; padding: 9px 0;
     font: 700 12px var(--mono); letter-spacing: .1em; text-transform: uppercase;
-    color: #000; white-space: nowrap;
+    color: var(--ink); white-space: nowrap;
     animation: marquee 22s linear infinite;
   }
-  .ticker:hover .ticker-track { animation-play-state: paused; }
-  .ticker-track span { padding: 0 10px; }
-  .ticker-track i { font-style: normal; }
+  .marquee:hover .marquee-track { animation-play-state: paused; }
+  .marquee-track span { padding: 0 10px; }
+  .marquee-track i { font-style: normal; color: var(--chart-3); }
   @keyframes marquee { to { transform: translateX(-50%); } }
 
   /* ---------- cards ---------- */
   .card {
+    position: relative;
     background: var(--card);
     border: var(--bw) solid var(--ink);
     border-radius: var(--radius);
-    box-shadow: 7px 7px 0 var(--ink);
+    box-shadow: var(--shadow-lg);
     overflow: hidden;
     opacity: 0; transform: translateY(14px);
     animation: rise .5s var(--ease) forwards;
@@ -143,18 +171,29 @@
   }
   .card:hover { translate: -2px -2px; box-shadow: 9px 9px 0 var(--ink); }
   .card-head {
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    padding: 11px 16px;
-    background: var(--cream);
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px;
+    background: var(--main);
     border-bottom: var(--bw) solid var(--ink);
   }
   .dots { display: inline-flex; gap: 6px; flex-shrink: 0; }
   .dots i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--ink); display: block; }
-  .dots i:nth-child(1) { background: var(--red); }
-  .dots i:nth-child(2) { background: var(--yellow); }
-  .dots i:nth-child(3) { background: var(--green); }
+  .dots i:nth-child(1) { background: var(--chart-3); }
+  .dots i:nth-child(2) { background: var(--chart-4); }
+  .dots i:nth-child(3) { background: var(--chart-5); }
   .card-title { font: 700 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
   .pad { padding: 18px; }
+
+  /* washi tape — same translucent yellow strip as the main site's cards */
+  .tape {
+    position: absolute; z-index: 10;
+    height: 1.35rem; width: 5rem;
+    background: rgba(250, 204, 0, .45);
+    border: 1px solid rgba(0, 0, 0, .2);
+    backdrop-filter: blur(1px);
+  }
+  .tape.tl { top: -8px; left: -14px; transform: rotate(-12deg); }
+  .tape.br { bottom: -8px; right: -14px; transform: rotate(14deg); }
 
   .features {
     display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
@@ -162,24 +201,27 @@
     animation: rise .5s var(--ease) .16s forwards;
   }
   .feat {
+    position: relative;
     background: var(--card);
     border: var(--bw) solid var(--ink); border-radius: var(--radius);
-    box-shadow: 5px 5px 0 var(--ink);
+    box-shadow: var(--shadow);
     padding: 16px;
     transition: translate .15s ease, box-shadow .15s ease;
   }
+  .feat:nth-child(odd) { transform: rotate(-.5deg); }
+  .feat:nth-child(even) { transform: rotate(.5deg); }
   .feat:hover { translate: -2px -2px; box-shadow: 7px 7px 0 var(--ink); }
-  .feat .chip {
+  .feat .chip2 {
     display: inline-block; padding: 3px 10px; margin-bottom: 10px;
     font: 700 10px var(--mono); letter-spacing: .08em; text-transform: uppercase;
-    border: 2px solid var(--ink); border-radius: 6px; color: #000;
+    border: 2px solid var(--ink); border-radius: 6px; color: var(--ink);
   }
-  .feat h3 { font-size: 15px; font-weight: 700; margin-bottom: 5px; }
+  .feat h3 { font-size: 15px; margin-bottom: 5px; }
   .feat p { font: 500 12px/1.55 var(--mono); color: var(--secondary); }
-  .feat:nth-child(1) .chip { background: var(--yellow); }
-  .feat:nth-child(2) .chip { background: var(--blue); }
-  .feat:nth-child(3) .chip { background: var(--green); }
-  .feat:nth-child(4) .chip { background: var(--pink); }
+  .feat:nth-child(1) .chip2 { background: var(--chart-1); }
+  .feat:nth-child(2) .chip2 { background: var(--chart-2); }
+  .feat:nth-child(3) .chip2 { background: var(--chart-4); }
+  .feat:nth-child(4) .chip2 { background: var(--chart-3); }
 
   /* ---------- steps ---------- */
   .steps { display: flex; flex-direction: column; gap: 12px; }
@@ -187,8 +229,8 @@
   .step .n {
     width: 32px; height: 32px; flex-shrink: 0;
     display: grid; place-items: center;
-    font: 700 14px var(--mono); color: #000;
-    background: var(--orange);
+    font: 700 14px var(--mono); color: var(--ink);
+    background: var(--chart-2);
     border: var(--bw) solid var(--ink); border-radius: 50%;
     box-shadow: 2px 2px 0 var(--ink);
   }
@@ -204,16 +246,16 @@
     background: #16141c; color: #ece5d8;
     font: 13px/1.8 var(--mono);
     padding: 16px 18px;
-    border-radius: 0 0 var(--radius) var(--radius);
     overflow-x: auto;
+    white-space: pre-line;
   }
   .term .c { color: #8d8699; }
-  .term .g { color: #9ed66f; }
-  .term .y { color: #ffdb58; }
+  .term .g { color: var(--chart-4); }
+  .term .y { color: var(--chart-1); }
 
   .note {
-    font: 600 11.5px/1.5 var(--mono); color: #000;
-    background: var(--yellow);
+    font: 600 11.5px/1.5 var(--mono); color: var(--ink);
+    background: var(--main);
     border: 2px solid var(--ink); border-radius: 8px; padding: 8px 12px;
   }
 
@@ -221,16 +263,23 @@
     text-align: center; font: 700 10.5px var(--mono);
     letter-spacing: .12em; text-transform: uppercase; color: var(--secondary);
   }
-  footer a { color: var(--label); text-decoration: none; border-bottom: 2px solid var(--pink); }
-  footer a:hover { background: var(--pink); color: #000; }
+  footer a { color: var(--ink); text-decoration: none; border-bottom: 2px solid var(--main); }
+  footer a:hover { background: var(--main); color: var(--ink); }
+
+  /* neobrutal scrollbar, same as the main site */
+  ::-webkit-scrollbar { width: 16px; height: 16px; }
+  ::-webkit-scrollbar-track { background: var(--bg); border-left: 2px solid var(--ink); }
+  ::-webkit-scrollbar-thumb { background: var(--ink); border: 3px solid transparent; border-radius: 999px; background-clip: padding-box; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--main); border-width: 1px; }
 
   @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+    html { scroll-behavior: auto; }
   }
   @media (max-width: 560px) {
-    h1 { font-size: 36px; }
     .features { grid-template-columns: 1fr; }
     .burst2 { display: none; }
+    .hero-note { display: none; }
   }
 </style>
 </head>
@@ -239,41 +288,47 @@
 
   <header class="hero">
     <svg class="burst" viewBox="0 0 48 48" aria-hidden="true">
-      <path d="M24 3c1.6 9.8 6.2 15.2 15 17-8.8 1.8-13.4 7.2-15 17-1.6-9.8-6.2-15.2-15-17 8.8-1.8 13.4-7.2 15-17z" fill="#ff9f5a" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+      <path d="M24 3c1.6 9.8 6.2 15.2 15 17-8.8 1.8-13.4 7.2-15 17-1.6-9.8-6.2-15.2-15-17 8.8-1.8 13.4-7.2 15-17z" fill="#FF4D50" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
     </svg>
     <svg class="burst2" viewBox="0 0 48 48" aria-hidden="true">
-      <path d="M24 3c1.6 9.8 6.2 15.2 15 17-8.8 1.8-13.4 7.2-15 17-1.6-9.8-6.2-15.2-15-17 8.8-1.8 13.4-7.2 15-17z" fill="#a8d8ea" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+      <path d="M24 3c1.6 9.8 6.2 15.2 15 17-8.8 1.8-13.4 7.2-15 17-1.6-9.8-6.2-15.2-15-17 8.8-1.8 13.4-7.2 15-17z" fill="#0099FF" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
     </svg>
+    <span class="chip">siterip.w0wzahh.link</span>
     <div class="appicon" aria-hidden="true">
       <svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 3v11"/><path d="m7.5 10 4.5 4.5L16.5 10"/>
         <path d="M4 16.5v2.6A1.9 1.9 0 0 0 5.9 21h12.2a1.9 1.9 0 0 0 1.9-1.9v-2.6"/>
       </svg>
     </div>
-    <h1>Site<span>Rip</span></h1>
+    <h1 class="glitch">SITE<span class="outline">RIP.</span></h1>
     <p class="tagline">Download entire websites — pages, assets &amp; SPA routes — as self-contained, offline-browsable ZIP archives.</p>
     <div class="hero-actions">
       <a class="btn primary" href="https://github.com/w0wzahh/siterip">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5A11.5 11.5 0 0 0 .5 12a11.5 11.5 0 0 0 7.86 10.91c.58.11.79-.25.79-.56v-2c-3.2.7-3.87-1.54-3.87-1.54-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.23-1.28-5.23-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.8 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.38-5.25 5.67.41.35.78 1.05.78 2.12v3.14c0 .31.21.68.8.56A11.5 11.5 0 0 0 23.5 12 11.5 11.5 0 0 0 12 .5z"/></svg>
         GitHub
       </a>
-      <a class="btn pink" href="https://ko-fi.com/w0wzahh">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h1.5a3 3 0 0 1 0 6H17"/><path d="M4 8h13v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z"/><path d="M8 2.5v2M12 2.5v2"/></svg>
-        Ko-fi
-      </a>
-      <a class="btn blue" href="https://app.netlify.com/start/deploy?repository=https://github.com/w0wzahh/siterip">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10a5.5 5.5 0 0 0-10.9-1.3A4.5 4.5 0 0 0 7.5 17.5H18a3.5 3.5 0 0 0 0-7z"/></svg>
-        Deploy to Netlify
-      </a>
-      <a class="btn" style="background:var(--green)" href="https://siterip-w0wzahh.netlify.app">
+      <a class="btn c4" href="https://siterip-w0wzahh.netlify.app">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="m7.5 10 4.5 4.5L16.5 10"/><path d="M4 16.5v2.6A1.9 1.9 0 0 0 5.9 21h12.2a1.9 1.9 0 0 0 1.9-1.9v-2.6"/></svg>
         Try it live
       </a>
+      <a class="btn neutral" href="https://w0wzahh.link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 0 20 15.3 15.3 0 0 1 0-20z"/></svg>
+        w0wzahh.link
+      </a>
+      <a class="btn neutral" href="https://app.netlify.com/start/deploy?repository=https://github.com/w0wzahh/siterip">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10a5.5 5.5 0 0 0-10.9-1.3A4.5 4.5 0 0 0 7.5 17.5H18a3.5 3.5 0 0 0 0-7z"/></svg>
+        Deploy to Netlify
+      </a>
+      <a class="btn c2" href="https://ko-fi.com/w0wzahh">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h1.5a3 3 0 0 1 0 6H17"/><path d="M4 8h13v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z"/><path d="M8 2.5v2M12 2.5v2"/></svg>
+        Ko-fi
+      </a>
     </div>
+    <span class="hero-note">the archive travels with you ↴</span>
   </header>
 
-  <div class="ticker" aria-hidden="true">
-    <div class="ticker-track">
+  <div class="marquee" aria-hidden="true">
+    <div class="marquee-track">
       <span>Full-page archive</span><i>✦</i><span>SPA support</span><i>✦</i><span>Media capture</span><i>✦</i><span>Offline replay</span><i>✦</i><span>Zip export</span><i>✦</i><span>Sitemap crawl</span><i>✦</i>
       <span>Full-page archive</span><i>✦</i><span>SPA support</span><i>✦</i><span>Media capture</span><i>✦</i><span>Offline replay</span><i>✦</i><span>Zip export</span><i>✦</i><span>Sitemap crawl</span><i>✦</i>
     </div>
@@ -281,31 +336,32 @@
 
   <div class="features">
     <div class="feat">
-      <span class="chip">Capture</span>
+      <span class="chip2">Capture</span>
       <h3>Real browser engine</h3>
       <p>Headless Chromium renders every page — the JS-built DOM is captured, not just raw HTML.</p>
     </div>
     <div class="feat">
-      <span class="chip">Replay</span>
+      <span class="chip2">Replay</span>
       <h3>Works offline</h3>
       <p>An injected service worker maps URLs to files — SPA routes and captured API calls still work.</p>
     </div>
     <div class="feat">
-      <span class="chip">Speed</span>
+      <span class="chip2">Speed</span>
       <h3>Parallel crawling</h3>
       <p>Configurable concurrency, sitemap discovery, and OOM-safe streaming to disk.</p>
     </div>
     <div class="feat">
-      <span class="chip">Safe</span>
+      <span class="chip2">Safe</span>
       <h3>SSRF-hardened</h3>
       <p>DNS-validated public hosts on every hop, rate limits, and capped jobs by default.</p>
     </div>
   </div>
 
   <section class="card" style="animation-delay:.24s">
+    <div class="tape tl"></div>
     <div class="card-head">
       <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
-      <span class="card-title">Quick start</span>
+      <span class="card-title">quick_start.sh</span>
     </div>
     <div class="term">
 <span class="c"># install &amp; run the web UI</span>
@@ -323,9 +379,10 @@
   </section>
 
   <section class="card" style="animation-delay:.32s">
+    <div class="tape br"></div>
     <div class="card-head">
       <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
-      <span class="card-title">How it works</span>
+      <span class="card-title">how_it_works.txt</span>
     </div>
     <div class="pad">
       <div class="steps">
